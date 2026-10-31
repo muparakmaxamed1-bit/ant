@@ -49,6 +49,9 @@ Without public Supabase configuration, the build intentionally displays a setup 
    supabase db push
    ```
 
+   The follow-up Edge Function access migration grants only the table operations used by trusted server functions. Do not grant the service-role key to frontend code.
+   If migrations were already run manually, inspect the remote migration history and reconcile it before `db push`; do not blindly replay the initial migration.
+
 3. Create an administrator through Supabase Auth (invite the intended administrator; do not expose a public sign-up form). After the `profiles` row is created, grant the role from the Supabase SQL Editor:
 
    ```sql
@@ -105,10 +108,12 @@ Without public Supabase configuration, the build intentionally displays a setup 
 - The deployed `/js/config.js` contains the configured Supabase project URL and a non-empty public key. Values were checked without printing the key.
 - The production page currently opens the administrator sign-in screen; the frontend no longer shows the missing-configuration notice.
 - The Supabase Auth health endpoint responds successfully.
-- The initial database migration is applied. Live inspection confirmed all 10 application tables have RLS enabled, 13 administrator-facing policies exist, and all three evidence buckets are private.
-- The Supabase Edge Functions are not yet deployed: the validation-function endpoint reports that the function was not found.
-- The administrator account `muparakmaxamed1@gmail.com` exists and has the `admin` profile role. Authentication within the application, Edge Functions, evidence uploads, permission collection, and secure downloads still require end-to-end verification.
-- Supabase Auth now uses the production Netlify Site URL and allows the production root and `/reset-password` callback. The updated reset page must be deployed before sending a fresh application recovery link.
+- Both checked-in migrations have been applied. The second migration adds only least-privilege `service_role` table grants needed by Edge Functions; live SQL checks confirmed RLS remains enabled on all 10 application tables and anonymous SELECT is denied. The 13 administrator policies remain installed, and all three evidence buckets are private.
+- All 14 configured Supabase Edge Functions are deployed. Production probes confirmed invalid evidence tokens return 404, missing required input returns 400, and an admin operation rejects unauthenticated requests. The production origin passes CORS/preflight and an untrusted origin is rejected.
+- The production sign-in page loads on desktop and a 390px mobile viewport with no horizontal overflow; a reload produced no browser console errors. The password-reset route fails closed without a valid recovery session.
+- The administrator account `muparakmaxamed1@gmail.com` exists and has the `admin` profile role. An authenticated admin session was not available, so administrator login, authenticated database operations, evidence uploads/downloads, and permission collection remain unverified.
+- Supabase Auth uses the production Netlify Site URL and allows the production root and `/reset-password` callback. A fresh recovery email request was rate-limited by Supabase (HTTP 429), so delivery and password reset remain unverified.
+- The initial migration was applied manually before migration history was established, and the follow-up grants migration was applied via SQL Editor. Migration-history reconciliation is still pending; do not run `supabase db push` against this project until both versions are marked applied with `supabase migration repair`.
 
 The local workspace used for this check did not contain a `.env` file. Keep local `.env` files ignored and configure production values in Netlify's environment-variable settings instead.
 
