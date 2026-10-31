@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+dist/
+node_modules/
+.netlify/
+.DS_Store
+Thumbs.db
+*.log
+evidence/
+private-evidence/
+supabase/.temp/
+supabase/.branches/

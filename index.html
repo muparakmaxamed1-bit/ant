@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101a2b">
+  <meta name="description" content="A consent-first platform for organizing authorized incident evidence.">
+  <title>Sentinel Evidence | Incident workspace</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+  <link href="/css/styles.css" rel="stylesheet">
+</head>
+<body>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <main id="setup-screen" class="setup-screen d-none">
+    <section class="setup-card">
+      <div class="brand-mark"><i class="bi bi-shield-lock"></i></div>
+      <p class="eyebrow">SENTINEL EVIDENCE</p>
+      <h1>Backend configuration required</h1>
+      <p class="text-secondary">This workspace is ready for Supabase, but no project URL or publishable key has been configured. Add the public values to your deployment environment and rebuild. Never add a service-role key here.</p>
+    </section>
+  </main>
+
+  <main id="login-screen" class="login-screen d-none">
+    <section class="login-card">
+      <div class="brand-mark"><i class="bi bi-shield-lock"></i></div>
+      <p class="eyebrow">SENTINEL EVIDENCE</p>
+      <h1>Investigation workspace</h1>
+      <p class="text-secondary mb-4">Sign in with an authorized administrator account.</p>
+      <form id="login-form" class="vstack gap-3">
+        <label class="form-label">Email
+          <input class="form-control" type="email" name="email" autocomplete="username" required>
+        </label>
+        <label class="form-label">Password
+          <input class="form-control" type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn btn-primary btn-lg" type="submit">Sign in</button>
+      </form>
+      <button id="reset-password" class="btn btn-link px-0 mt-3" type="button">Forgot password?</button>
+      <p class="small text-secondary mt-3 mb-0">Evidence collection controls are presented separately and require explicit permission.</p>
+    </section>
+  </main>
+
+  <main id="public-screen" class="public-screen d-none">
+    <header class="public-header">
+      <a class="brand-lockup" href="/"><span class="brand-mark"><i class="bi bi-shield-lock"></i></span><span><strong>Sentinel Evidence</strong><small>Authorized evidence submission</small></span></a>
+    </header>
+    <section class="public-card">
+      <div id="public-content" aria-live="polite">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading</span></div>
+        <p class="mt-3 mb-0">Checking this evidence link…</p>
+      </div>
+    </section>
+    <footer class="public-footer">Your browser will ask before using location, camera, or microphone. You can decline any request.</footer>
+  </main>
+
+  <div id="admin-app" class="admin-app d-none">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand-lockup sidebar-brand" href="#dashboard"><span class="brand-mark"><i class="bi bi-shield-lock"></i></span><span><strong>Sentinel</strong><small>Evidence workspace</small></span></a>
+      <p class="nav-caption">WORKSPACE</p>
+      <nav class="side-nav" aria-label="Main navigation">
+        <a href="#dashboard" data-view="dashboard"><i class="bi bi-grid-1x2"></i>Overview</a>
+        <a href="#cases" data-view="cases"><i class="bi bi-folder2-open"></i>Cases</a>
+        <a href="#links" data-view="links"><i class="bi bi-link-45deg"></i>Evidence links</a>
+        <a href="#visits" data-view="visits"><i class="bi bi-activity"></i>Visit activity</a>
+        <a href="#consents" data-view="consents"><i class="bi bi-ui-checks"></i>Consent records</a>
+        <a href="#sessions" data-view="sessions"><i class="bi bi-geo"></i>GPS sessions</a>
+        <a href="#evidence" data-view="evidence"><i class="bi bi-file-earmark-lock"></i>Evidence library</a>
+        <a href="#map" data-view="map"><i class="bi bi-geo-alt"></i>Location map</a>
+        <a href="#audit" data-view="audit"><i class="bi bi-journal-text"></i>Audit log</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="privacy-note"><i class="bi bi-shield-check"></i><span>Private workspace<br><small>Access is governed by Supabase RLS</small></span></div>
+        <button id="sign-out" class="sign-out"><i class="bi bi-box-arrow-left"></i> Sign out</button>
+      </div>
+    </aside>
+    <section class="workspace">
+      <header class="topbar">
+        <button id="menu-toggle" class="btn btn-light d-lg-none" type="button" aria-label="Toggle navigation"><i class="bi bi-list"></i></button>
+        <div><p class="eyebrow mb-1">INCIDENT RESPONSE</p><h1 id="page-title">Overview</h1></div>
+        <div class="topbar-user"><span class="avatar"><i class="bi bi-person"></i></span><span id="admin-email">Administrator</span></div>
+      </header>
+      <div id="app-alert" class="alert d-none mx-4 mt-3" role="alert"></div>
+      <section id="view-dashboard" class="content-view">
+        <div class="welcome-row"><div><h2>Case overview</h2><p>Verified records and consented submissions in one place.</p></div><a href="#cases" class="btn btn-primary"><i class="bi bi-plus-lg me-2"></i>New case</a></div>
+        <div class="stats-grid">
+          <article class="stat-card"><span class="stat-icon blue"><i class="bi bi-folder2"></i></span><span class="stat-label">Total cases</span><strong id="stat-cases">—</strong><small>Investigation records</small></article>
+          <article class="stat-card"><span class="stat-icon teal"><i class="bi bi-link-45deg"></i></span><span class="stat-label">Active links</span><strong id="stat-links">—</strong><small>Currently available</small></article>
+          <article class="stat-card"><span class="stat-icon violet"><i class="bi bi-activity"></i></span><span class="stat-label">Recorded visits</span><strong id="stat-visits">—</strong><small>Technical visit records</small></article>
+          <article class="stat-card"><span class="stat-icon blue"><i class="bi bi-geo"></i></span><span class="stat-label">Active GPS sessions</span><strong id="stat-sessions">—</strong><small>Visible, consented sessions</small></article>
+          <article class="stat-card"><span class="stat-icon amber"><i class="bi bi-file-earmark-check"></i></span><span class="stat-label">Evidence items</span><strong id="stat-evidence">—</strong><small>Submitted with consent</small></article>
+        </div>
+        <div class="dashboard-grid">
+          <article class="panel"><div class="panel-heading"><div><h3>Visit activity</h3><p>Daily recorded visits</p></div><span class="subtle-badge">Last 7 days</span></div><div class="chart-wrap"><canvas id="activity-chart" aria-label="Daily visits chart"></canvas></div></article>
+          <article class="panel"><div class="panel-heading"><div><h3>Recent activity</h3><p>Latest case and evidence updates</p></div></div><div id="recent-activity" class="activity-list"><p class="empty-state">Loading activity…</p></div></article>
+        </div>
+        <article class="panel mt-4"><div class="panel-heading"><div><h3>Recent cases</h3><p>Latest investigation records</p></div><a href="#cases" class="text-link">View all <i class="bi bi-arrow-right"></i></a></div><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Case</th><th>Reference</th><th>Status</th><th>Incident date</th><th>Created</th></tr></thead><tbody id="recent-cases"><tr><td colspan="5" class="empty-state">Loading cases…</td></tr></tbody></table></div></article>
+      </section>
+      <section id="view-cases" class="content-view d-none">
+        <div class="section-toolbar"><div><h2>Cases</h2><p>Manage investigation records and case status.</p></div><button id="new-case-button" class="btn btn-primary"><i class="bi bi-plus-lg me-2"></i>Create case</button></div>
+        <div class="table-filters"><label class="filter-search"><i class="bi bi-search"></i><input id="case-search" type="search" class="form-control" placeholder="Search title or reference" aria-label="Search cases"></label><select id="case-status-filter" class="form-select" aria-label="Filter cases by status"><option value="">All statuses</option><option>Open</option><option>Under Review</option><option>Evidence Collected</option><option>Submitted to Police</option><option>Closed</option></select></div>
+        <article class="panel"><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Case title</th><th>Reference</th><th>Status</th><th>Incident date</th><th>Updated</th><th></th></tr></thead><tbody id="cases-table"></tbody></table></div></article>
+      </section>
+      <section id="view-links" class="content-view d-none">
+        <div class="section-toolbar"><div><h2>Evidence links</h2><p>Create revocable, expiring links for a specific case.</p></div><button id="new-link-button" class="btn btn-primary"><i class="bi bi-plus-lg me-2"></i>Generate link</button></div>
+        <article class="panel"><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Case</th><th>Description</th><th>Status</th><th>Expires</th><th>Created</th><th></th></tr></thead><tbody id="links-table"></tbody></table></div></article>
+      </section>
+      <section id="view-visits" class="content-view d-none">
+        <div class="section-toolbar"><div><h2>Visit activity</h2><p>Technical metadata is not proof of identity. Network locations are estimates.</p></div></div>
+        <div class="table-filters"><label class="filter-search"><i class="bi bi-search"></i><input id="visit-search" type="search" class="form-control" placeholder="Search IP, case, location" aria-label="Search visits"></label></div>
+        <article class="panel"><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Visited</th><th>Case</th><th>IP address</th><th>Estimated location</th><th>Browser / device</th></tr></thead><tbody id="visits-table"></tbody></table></div></article>
+      </section>
+      <section id="view-consents" class="content-view d-none">
+        <div class="section-toolbar"><div><h2>Consent records</h2><p>Permission decisions and revocation timestamps associated with visits.</p></div></div>
+        <article class="panel"><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Recorded</th><th>Case</th><th>Visit</th><th>Permission</th><th>Status</th><th>Purpose</th><th>Revoked</th></tr></thead><tbody id="consents-table"></tbody></table></div></article>
+      </section>
+      <section id="view-sessions" class="content-view d-none">
+        <div class="section-toolbar"><div><h2>GPS sessions</h2><p>Location is collected only during user-authorized, visible browser sessions.</p></div></div>
+        <article class="panel"><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Started</th><th>Case</th><th>Visit</th><th>Status</th><th>Ended</th><th>Records</th></tr></thead><tbody id="sessions-table"></tbody></table></div></article>
+      </section>
+      <section id="view-evidence" class="content-view d-none">
+        <div class="section-toolbar"><div><h2>Evidence library</h2><p>Private files and user-submitted records associated with cases.</p></div><button id="export-button" class="btn btn-outline-primary"><i class="bi bi-download me-2"></i>Export case records</button></div>
+        <div class="table-filters"><label class="filter-search"><i class="bi bi-search"></i><input id="evidence-search" type="search" class="form-control" placeholder="Search case or integrity hash" aria-label="Search evidence"></label><select id="evidence-type-filter" class="form-select" aria-label="Filter evidence by type"><option value="">All evidence types</option><option value="image">Photographs</option><option value="audio">Audio</option><option value="written_statement">Written statements</option></select></div>
+        <article class="panel"><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Collected</th><th>Case</th><th>Type</th><th>File details</th><th>Integrity SHA-256</th><th></th></tr></thead><tbody id="evidence-table"></tbody></table></div></article>
+      </section>
+      <section id="view-map" class="content-view d-none">
+        <div class="section-toolbar"><div><h2>Location records</h2><p><span class="map-key gps-key"></span> Consented GPS <span class="map-key ip-key ms-3"></span> Estimated IP location</p></div></div>
+        <article class="panel map-panel"><div id="location-map" role="region" aria-label="Map of location records"></div><p class="map-disclaimer">IP-derived locations are estimates and may be inaccurate. Location data is displayed only when available in authorized records.</p></article>
+      </section>
+      <section id="view-audit" class="content-view d-none">
+        <div class="section-toolbar"><div><h2>Audit log</h2><p>Administrative actions recorded by the backend.</p></div></div>
+        <article class="panel"><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Timestamp</th><th>Administrator</th><th>Action</th><th>Record</th></tr></thead><tbody id="audit-table"></tbody></table></div></article>
+      </section>
+    </section>
+  </div>
+
+  <div class="modal fade" id="case-modal" tabindex="-1" aria-labelledby="case-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><form id="case-form">
+      <div class="modal-header"><div><p class="eyebrow mb-1">CASE RECORD</p><h2 id="case-modal-title" class="modal-title fs-5">Create a case</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body vstack gap-3">
+        <input name="id" type="hidden">
+        <label class="form-label">Case title<input name="title" class="form-control" maxlength="160" required></label>
+        <label class="form-label">Case reference<input name="case_reference" class="form-control" maxlength="64" required></label>
+        <label class="form-label">Incident date<input name="incident_date" class="form-control" type="datetime-local"></label>
+        <label class="form-label">Status<select name="status" class="form-select"><option>Open</option><option>Under Review</option><option>Evidence Collected</option><option>Submitted to Police</option><option>Closed</option></select></label>
+        <label class="form-label">Description<textarea name="description" class="form-control" rows="4" maxlength="10000"></textarea></label>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" type="submit">Save case</button></div>
+    </form></div></div>
+  </div>
+  <div class="modal fade" id="link-modal" tabindex="-1" aria-labelledby="link-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><form id="link-form">
+      <div class="modal-header"><div><p class="eyebrow mb-1">SECURE LINK</p><h2 id="link-modal-title" class="modal-title fs-5">Generate an evidence link</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body vstack gap-3">
+        <label class="form-label">Case<select name="case_id" class="form-select" required></select></label>
+        <label class="form-label">Description<input name="description" class="form-control" maxlength="240" required></label>
+        <label class="form-label">Expires at<input name="expires_at" class="form-control" type="datetime-local"></label>
+        <p class="form-hint mb-0">The secure link is shown once. Anyone opening it sees the purpose and privacy notice before visit metadata is recorded.</p>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" type="submit">Generate link</button></div>
+    </form></div></div>
+  </div>
+  <div class="modal fade" id="link-created-modal" tabindex="-1" aria-labelledby="link-created-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 id="link-created-title" class="modal-title fs-5">Link generated</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><p>Copy this URL now. It cannot be retrieved again.</p><div class="input-group"><input id="created-link-url" class="form-control" readonly aria-label="Generated evidence link"><button id="copy-link" class="btn btn-outline-primary" type="button">Copy</button></div></div></div></div>
+  </div>
+  <div class="modal fade" id="password-modal" tabindex="-1" aria-labelledby="password-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><form id="password-update-form">
+      <div class="modal-header"><h2 id="password-modal-title" class="modal-title fs-5">Set a new password</h2></div>
+      <div class="modal-body"><label class="form-label w-100">New password<input class="form-control" name="password" type="password" autocomplete="new-password" minlength="12" required><small class="form-hint">Use at least 12 characters.</small></label></div>
+      <div class="modal-footer"><button class="btn btn-primary" type="submit">Update password</button></div>
+    </form></div></div>
+  </div>
+  <div class="modal fade" id="statement-modal" tabindex="-1" aria-labelledby="statement-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 id="statement-modal-title" class="modal-title fs-5">Submitted statement</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><pre id="statement-content" class="statement-content"></pre></div></div></div>
+  </div>
+  <div class="modal fade" id="visit-details-modal" tabindex="-1" aria-labelledby="visit-details-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 id="visit-details-title" class="modal-title fs-5">Visit details</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div id="visit-details-content" class="modal-body"></div></div></div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="/js/config.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

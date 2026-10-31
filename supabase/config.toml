@@ -1,0 +1,30 @@
+project_id = "sentinel-evidence"
+
+[functions.generate-evidence-link]
+verify_jwt = false
+[functions.manage-evidence-link]
+verify_jwt = false
+[functions.validate-evidence-link]
+verify_jwt = false
+[functions.record-visit]
+verify_jwt = false
+[functions.lookup-ip-intelligence]
+verify_jwt = false
+[functions.create-consent-record]
+verify_jwt = false
+[functions.start-location-session]
+verify_jwt = false
+[functions.save-location-record]
+verify_jwt = false
+[functions.end-location-session]
+verify_jwt = false
+[functions.submit-evidence]
+verify_jwt = false
+[functions.complete-evidence-upload]
+verify_jwt = false
+[functions.submit-written-evidence]
+verify_jwt = false
+[functions.generate-police-report]
+verify_jwt = false
+[functions.export-case-evidence]
+verify_jwt = false
