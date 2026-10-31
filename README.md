@@ -88,7 +88,7 @@ Without public Supabase configuration, the build intentionally displays a setup 
    supabase functions deploy export-case-evidence
    ```
 
-6. Configure Supabase Auth's site URL and redirect allowlist for the Netlify origin and local development origin. Configure a production SMTP provider before relying on password recovery.
+6. Configure Supabase Auth's Site URL as the production Netlify origin and allow the exact production root and `/reset-password` URLs. The app requests recovery links for `/reset-password`; that page requires a valid recovery session, does not load the admin dashboard, and signs out active sessions after a successful password update. Add a local development URL only when it is needed. Configure a production SMTP provider before relying on password recovery.
 7. Verify the three evidence buckets remain private. The migration adds private bucket policies and administrators can create one-minute signed download URLs. The migration also adds the dashboard tables to `supabase_realtime` when that publication exists.
 
 ## Netlify setup
@@ -105,9 +105,10 @@ Without public Supabase configuration, the build intentionally displays a setup 
 - The deployed `/js/config.js` contains the configured Supabase project URL and a non-empty public key. Values were checked without printing the key.
 - The production page currently opens the administrator sign-in screen; the frontend no longer shows the missing-configuration notice.
 - The Supabase Auth health endpoint responds successfully.
-- The database migration is not yet applied: Supabase returns `PGRST205` for `public.cases`.
+- The initial database migration is applied. Live inspection confirmed all 10 application tables have RLS enabled, 13 administrator-facing policies exist, and all three evidence buckets are private.
 - The Supabase Edge Functions are not yet deployed: the validation-function endpoint reports that the function was not found.
-- Authentication with an administrator, RLS policies, evidence storage, permission collection, and evidence uploads therefore remain unverified against the live backend.
+- The administrator account `muparakmaxamed1@gmail.com` exists and has the `admin` profile role. Authentication within the application, Edge Functions, evidence uploads, permission collection, and secure downloads still require end-to-end verification.
+- Supabase Auth now uses the production Netlify Site URL and allows the production root and `/reset-password` callback. The updated reset page must be deployed before sending a fresh application recovery link.
 
 The local workspace used for this check did not contain a `.env` file. Keep local `.env` files ignored and configure production values in Netlify's environment-variable settings instead.
 

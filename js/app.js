@@ -3,7 +3,8 @@
 
   const config = window.APP_CONFIG ?? {};
   const configured = config.supabaseUrl?.startsWith("https://") && config.supabaseAnonKey?.length > 20;
-  const screens = ["setup-screen", "login-screen", "public-screen", "admin-app"];
+  const screens = ["setup-screen", "login-screen", "password-reset-screen", "public-screen", "admin-app"];
+  const isPasswordResetRoute = window.location.pathname.replace(/\/+$/, "") === "/reset-password";
   const titles = {
     dashboard: "Overview",
     cases: "Cases",
@@ -33,6 +34,7 @@
   let audioCapture;
   let imageConsentId;
   let audioConsentId;
+  let recoverySessionActive = false;
 
   const byId = (id) => document.getElementById(id);
   const setScreen = (visibleId) => screens.forEach((id) => byId(id).classList.toggle("d-none", id !== visibleId));
@@ -106,8 +108,12 @@
         }, 0);
         setScreen("login-screen");
       }
-      if (event === "PASSWORD_RECOVERY") showPasswordRecovery();
+      if (event === "PASSWORD_RECOVERY") {
+        recoverySessionActive = true;
+        showPasswordRecovery();
+      }
       if (event === "SIGNED_IN" && sessionState?.user) {
+        if (isPasswordResetRoute) return;
         window.setTimeout(() => {
           showAdmin(sessionState.user).catch((error) => toast(`Administrator workspace could not open: ${error.message}`, "error"));
         }, 0);
@@ -117,6 +123,16 @@
     if (error) {
       setScreen("login-screen");
       toast(`Could not restore the sign-in session: ${error.message}`, "error");
+      return;
+    }
+    if (isPasswordResetRoute) {
+      setScreen("password-reset-screen");
+      if (session && recoverySessionActive) {
+        showPasswordRecovery();
+      } else {
+        byId("password-update-form").classList.add("d-none");
+        byId("password-reset-message").textContent = "This recovery link is invalid, expired, or has already been used. Request a new link from the sign-in page.";
+      }
       return;
     }
     if (!session) {
@@ -878,7 +894,10 @@
   }
 
   function showPasswordRecovery() {
-    bootstrap.Modal.getOrCreateInstance(byId("password-modal"), { backdrop: "static", keyboard: false }).show();
+    window.history.replaceState(null, "", "/reset-password");
+    byId("password-reset-message").textContent = "Your recovery link is valid. Choose a new password to secure your account.";
+    byId("password-update-form").classList.remove("d-none");
+    setScreen("password-reset-screen");
   }
 
   async function setupEvents() {
@@ -891,7 +910,7 @@
     byId("reset-password").addEventListener("click", async () => {
       const email = document.querySelector('#login-form input[name="email"]').value.trim();
       if (!email) { toast("Enter your account email first.", "error"); return; }
-      const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/` });
+      const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
       if (error) toast(`Password recovery could not be requested: ${error.message}`, "error");
       else toast("If the account exists, a recovery email has been sent.");
     });
@@ -920,13 +939,23 @@
     byId("password-update-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
-      const password = new FormData(form).get("password");
+      const formData = new FormData(form);
+      const password = formData.get("password");
+      if (password !== formData.get("password-confirmation")) {
+        toast("The passwords do not match.", "error");
+        return;
+      }
       const { error } = await client.auth.updateUser({ password });
       if (error) toast(`Password could not be changed: ${error.message}`, "error");
       else {
         form.reset();
-        bootstrap.Modal.getOrCreateInstance(byId("password-modal")).hide();
-        toast("Password updated.");
+        const { error: signOutError } = await client.auth.signOut({ scope: "global" });
+        setScreen("login-screen");
+        if (signOutError) {
+          toast("Password updated, but active sessions could not all be revoked. Sign out on your other devices.", "error");
+        } else {
+          toast("Password updated and active sessions revoked. Sign in with your new password.");
+        }
       }
     });
     byId("copy-link").addEventListener("click", async () => {

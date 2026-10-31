@@ -42,6 +42,26 @@
     </section>
   </main>
 
+  <main id="password-reset-screen" class="login-screen d-none">
+    <section class="login-card">
+      <div class="brand-mark"><i class="bi bi-shield-lock"></i></div>
+      <p class="eyebrow">SENTINEL EVIDENCE</p>
+      <h1>Set a new password</h1>
+      <p id="password-reset-message" class="text-secondary mb-4" role="status" aria-live="polite">Checking your secure recovery link…</p>
+      <form id="password-update-form" class="vstack gap-3 d-none">
+        <label class="form-label">New password
+          <input class="form-control" name="password" type="password" autocomplete="new-password" minlength="12" required>
+        </label>
+        <label class="form-label">Confirm new password
+          <input class="form-control" name="password-confirmation" type="password" autocomplete="new-password" minlength="12" required>
+        </label>
+        <p class="form-hint mb-0">Use at least 12 characters. Updating your password signs out active sessions.</p>
+        <button class="btn btn-primary btn-lg" type="submit">Update password</button>
+      </form>
+      <a class="btn btn-link px-0 mt-3" href="/">Return to sign in</a>
+    </section>
+  </main>
+
   <main id="public-screen" class="public-screen d-none">
     <header class="public-header">
       <a class="brand-lockup" href="/"><span class="brand-mark"><i class="bi bi-shield-lock"></i></span><span><strong>Sentinel Evidence</strong><small>Authorized evidence submission</small></span></a>
@@ -163,13 +183,6 @@
   </div>
   <div class="modal fade" id="link-created-modal" tabindex="-1" aria-labelledby="link-created-title" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 id="link-created-title" class="modal-title fs-5">Link generated</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><p>Copy this URL now. It cannot be retrieved again.</p><div class="input-group"><input id="created-link-url" class="form-control" readonly aria-label="Generated evidence link"><button id="copy-link" class="btn btn-outline-primary" type="button">Copy</button></div></div></div></div>
-  </div>
-  <div class="modal fade" id="password-modal" tabindex="-1" aria-labelledby="password-modal-title" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><form id="password-update-form">
-      <div class="modal-header"><h2 id="password-modal-title" class="modal-title fs-5">Set a new password</h2></div>
-      <div class="modal-body"><label class="form-label w-100">New password<input class="form-control" name="password" type="password" autocomplete="new-password" minlength="12" required><small class="form-hint">Use at least 12 characters.</small></label></div>
-      <div class="modal-footer"><button class="btn btn-primary" type="submit">Update password</button></div>
-    </form></div></div>
   </div>
   <div class="modal fade" id="statement-modal" tabindex="-1" aria-labelledby="statement-modal-title" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 id="statement-modal-title" class="modal-title fs-5">Submitted statement</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><pre id="statement-content" class="statement-content"></pre></div></div></div>
