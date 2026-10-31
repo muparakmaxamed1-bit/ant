@@ -15,3 +15,8 @@
     X-Frame-Options = "DENY"
     Permissions-Policy = "camera=(self), microphone=(self), geolocation=(self)"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+
+[[headers]]
+  for = "/js/config.js"
+  [headers.values]
+    Cache-Control = "no-store, max-age=0"

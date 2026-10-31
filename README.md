@@ -93,13 +93,23 @@ Without public Supabase configuration, the build intentionally displays a setup 
 
 ## Netlify setup
 
-1. Connect the selected GitHub repository after confirming the repository and production branch.
-2. Configure `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Netlify build environment variables. These are the public project URL and publishable/anon key only.
-3. Set the build command to `npm run build` and publish directory to `dist` (already configured in `netlify.toml`).
-4. Do not configure `SUPABASE_SERVICE_ROLE_KEY` or the IP-geolocation API key in frontend/build variables. Configure them only as Supabase Edge Function secrets.
-5. Add the final Netlify/custom-domain origin to `ALLOWED_ORIGINS` in Supabase and to Supabase Auth redirect URLs.
+1. The selected GitHub repository is `https://github.com/muparakmaxamed1-bit/ant`, on branch `main`.
+2. The Netlify production site is `https://moonlit-marshmallow-42eb56.netlify.app/`.
+3. Configure `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Netlify build environment variables for the production build context. These are the public project URL and publishable/anon key only. The build writes these values into `dist/js/config.js`; they are not server secrets.
+4. The build command is `npm run build` and the publish directory is `dist` (already configured in `netlify.toml`). The generated config asset is marked `no-store` to prevent stale build configuration from being reused.
+5. Do not configure `SUPABASE_SERVICE_ROLE_KEY` or the IP-geolocation API key in Netlify frontend/build variables. Configure them only as Supabase Edge Function secrets.
+6. Add the final Netlify/custom-domain origin to `ALLOWED_ORIGINS` in Supabase and to Supabase Auth redirect URLs.
 
-No repository, Supabase project, Netlify site, or production URL is connected by this source tree. Connecting or deploying requires the owner's account access and explicit repository selection.
+### Production verification snapshot (2026-11-01)
+
+- The deployed `/js/config.js` contains the configured Supabase project URL and a non-empty public key. Values were checked without printing the key.
+- The production page currently opens the administrator sign-in screen; the frontend no longer shows the missing-configuration notice.
+- The Supabase Auth health endpoint responds successfully.
+- The database migration is not yet applied: Supabase returns `PGRST205` for `public.cases`.
+- The Supabase Edge Functions are not yet deployed: the validation-function endpoint reports that the function was not found.
+- Authentication with an administrator, RLS policies, evidence storage, permission collection, and evidence uploads therefore remain unverified against the live backend.
+
+The local workspace used for this check did not contain a `.env` file. Keep local `.env` files ignored and configure production values in Netlify's environment-variable settings instead.
 
 ## Security notes
 
