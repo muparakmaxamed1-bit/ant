@@ -23,6 +23,8 @@
   let currentView = "dashboard";
   let locationWatch;
   let activeLocationSession;
+  let locationTrackingActive = false;
+  let locationStopInProgress = false;
   let currentVisitId;
   let publicToken;
   let publicLink;
@@ -662,23 +664,39 @@
 
   async function startLocation() {
     if (!navigator.geolocation) { toast("This browser does not support location.", "error"); return; }
+    if (!currentVisitId) {
+      console.error(JSON.stringify({ operation: "start-location-session", success: false, code: "MISSING_VISIT_ID" }));
+      toast("Location cannot start because this submission has no recorded visit. Restart the submission and try again.", "error");
+      return;
+    }
     const status = byId("location-status");
     status.classList.remove("d-none");
     status.textContent = "Requesting your location. Your browser will ask for permission.";
     byId("start-location").disabled = true;
     const savePosition = async (positionUpdate) => {
+      if (!locationTrackingActive || locationStopInProgress || !activeLocationSession) return;
+      const visitId = currentVisitId;
+      const sessionId = activeLocationSession;
+      if (!visitId) {
+        console.error(JSON.stringify({ operation: "save-location-record", success: false, code: "MISSING_VISIT_ID" }));
+        toast("Location update could not be saved because this submission has no visit record.", "error");
+        return;
+      }
       try {
         await invoke("save-location-record", {
-          session_id: activeLocationSession,
+          visit_id: visitId,
+          session_id: sessionId,
           latitude: positionUpdate.coords.latitude,
           longitude: positionUpdate.coords.longitude,
           accuracy: positionUpdate.coords.accuracy
         });
+        if (!locationTrackingActive || locationStopInProgress || activeLocationSession !== sessionId) return;
         status.firstChild.textContent = `Location sharing is active. Last update ${new Date(positionUpdate.timestamp).toLocaleTimeString()} (±${Math.round(positionUpdate.coords.accuracy)} m). `;
       } catch (error) {
         if (/inactive|expired/i.test(error.message)) {
           await stopLocation("The evidence link is no longer active. Location sharing has stopped.");
         } else {
+          console.error(JSON.stringify({ operation: "save-location-record", success: false, message: error.message }));
           toast(`Location update could not be saved: ${error.message}`, "error");
         }
       }
@@ -693,10 +711,12 @@
         });
         const session = await invoke("start-location-session", { visit_id: currentVisitId, consent_id: consent.consent_id });
         activeLocationSession = session.session_id;
+        locationTrackingActive = true;
         status.textContent = "Location sharing is active. Select Stop sharing at any time.";
         status.insertAdjacentHTML("beforeend", ' <button id="stop-location" class="btn btn-sm btn-outline-danger mt-2" type="button">Stop sharing</button>');
-        byId("stop-location").addEventListener("click", () => stopLocation(), { once: true });
+        byId("stop-location").addEventListener("click", () => stopLocation());
         await savePosition(position);
+        if (locationStopInProgress || !activeLocationSession) return;
         locationWatch = navigator.geolocation.watchPosition(savePosition, async (error) => {
           await stopLocation(`Location sharing ended: ${errorMessage(error)}`);
         }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
@@ -720,17 +740,51 @@
   }
 
   async function stopLocation(message = "Location sharing has stopped.") {
+    if (locationStopInProgress) return;
+    locationStopInProgress = true;
+    locationTrackingActive = false;
     if (locationWatch !== undefined) navigator.geolocation.clearWatch(locationWatch);
     locationWatch = undefined;
+    const status = byId("location-status");
+    const stopButton = byId("stop-location");
+    if (stopButton) stopButton.disabled = true;
     if (activeLocationSession) {
-      try { await invoke("end-location-session", { session_id: activeLocationSession }); }
-      catch (error) { toast(`Could not close the location session: ${error.message}`, "error"); }
+      const visitId = currentVisitId;
+      const sessionId = activeLocationSession;
+      if (!visitId) {
+        console.error(JSON.stringify({ operation: "end-location-session", success: false, code: "MISSING_VISIT_ID" }));
+        if (status?.firstChild) {
+          status.firstChild.textContent = "Browser tracking stopped, but the session cannot be finalized without its visit record. ";
+        }
+        if (stopButton) {
+          stopButton.disabled = false;
+          stopButton.textContent = "Retry stop";
+        }
+        toast("Could not close the location session because this submission has no visit record.", "error");
+        locationStopInProgress = false;
+        return;
+      }
+      try {
+        await invoke("end-location-session", { visit_id: visitId, session_id: sessionId });
+      } catch (error) {
+        console.error(JSON.stringify({ operation: "end-location-session", success: false, message: error.message }));
+        if (status?.firstChild) {
+          status.firstChild.textContent = `Browser tracking stopped, but the session could not be finalized: ${error.message} `;
+        }
+        if (stopButton) {
+          stopButton.disabled = false;
+          stopButton.textContent = "Retry stop";
+        }
+        toast(`Could not close the location session: ${error.message}`, "error");
+        locationStopInProgress = false;
+        return;
+      }
       activeLocationSession = undefined;
     }
-    const status = byId("location-status");
     if (status) status.textContent = message;
     const button = byId("start-location");
     if (button) button.disabled = false;
+    locationStopInProgress = false;
   }
 
   async function openCamera() {
