@@ -7,6 +7,7 @@
   const isPasswordResetRoute = window.location.pathname.replace(/\/+$/, "") === "/reset-password";
   const titles = {
     dashboard: "Overview",
+    analytics: "Analytics",
     cases: "Cases",
     links: "Evidence links",
     visits: "Visit activity",
@@ -19,6 +20,7 @@
   let client;
   let chart;
   let map;
+  let dashboardMap;
   let realtimeChannel;
   let currentView = "dashboard";
   let locationWatch;
@@ -40,6 +42,12 @@
 
   const byId = (id) => document.getElementById(id);
   const setScreen = (visibleId) => screens.forEach((id) => byId(id).classList.toggle("d-none", id !== visibleId));
+  const updateSystemClock = () => {
+    const clock = byId("system-clock");
+    const now = new Date();
+    clock.dateTime = now.toISOString();
+    clock.textContent = now.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
+  };
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[char]));
@@ -62,6 +70,15 @@
     item.textContent = message;
     byId("toast-region").append(item);
     window.setTimeout(() => item.remove(), 4800);
+  };
+  const updateStatusText = (element, message) => {
+    if (!element) return;
+    const firstNode = element.firstChild;
+    if (firstNode && firstNode.nodeType === Node.TEXT_NODE) {
+      firstNode.textContent = message;
+      return;
+    }
+    element.textContent = message;
   };
   const showPublicMessage = (title, message, icon = "bi-shield-exclamation") => {
     byId("public-content").innerHTML = `<span class="brand-mark mb-3"><i class="bi ${icon}"></i></span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p>`;
@@ -162,11 +179,12 @@
       toast("This account is not authorized as an administrator.", "error");
       return;
     }
-    byId("admin-email").textContent = profile.full_name || user.email || "Administrator";
+    const adminName = profile.full_name || user.email || "Administrator";
+    byId("admin-email").textContent = adminName;
+    byId("profile-name").textContent = adminName;
     setScreen("admin-app");
     setupRealtime();
-    routeAdmin();
-    loadDashboard();
+    await routeAdmin();
   }
 
   function setupRealtime() {
@@ -187,6 +205,17 @@
       });
     }
     realtimeChannel.subscribe((status) => {
+      const online = status === "SUBSCRIBED";
+      const degraded = status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED";
+      const label = online ? "ONLINE" : degraded ? "SYNC DEGRADED" : "CONNECTING";
+      const systemStatus = byId("system-status");
+      systemStatus.dataset.status = online ? "online" : degraded ? "degraded" : "connecting";
+      systemStatus.lastElementChild.textContent = label;
+      const dashboardStatus = byId("dashboard-live-status");
+      if (dashboardStatus) {
+        dashboardStatus.textContent = online ? "LIVE · ONLINE" : label;
+        dashboardStatus.parentElement.dataset.status = online ? "online" : degraded ? "degraded" : "connecting";
+      }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         toast("Live updates are unavailable. Reload a page to refresh its records.", "error");
       }
@@ -194,14 +223,17 @@
   }
 
   async function routeAdmin() {
-    const view = (window.location.hash.slice(1) || "dashboard").split("/")[0];
-    const activeView = titles[view] ? view : "dashboard";
-    currentView = activeView;
-    document.querySelectorAll(".content-view").forEach((section) => section.classList.toggle("d-none", section.id !== `view-${activeView}`));
-    document.querySelectorAll(".side-nav a").forEach((link) => link.classList.toggle("active", link.dataset.view === activeView));
+    const requestedView = (window.location.hash.slice(1) || "dashboard").split("/")[0];
+    const activeView = titles[requestedView] ? requestedView : "dashboard";
+    const contentView = activeView === "analytics" ? "dashboard" : activeView;
+    currentView = contentView;
+    document.querySelectorAll(".content-view").forEach((section) => section.classList.toggle("d-none", section.id !== `view-${contentView}`));
+    document.querySelectorAll(".side-nav a").forEach((link) => {
+      link.classList.toggle("active", link.dataset.view === activeView);
+    });
     byId("page-title").textContent = titles[activeView];
     byId("sidebar").classList.remove("open");
-    if (activeView === "dashboard") await loadDashboard();
+    if (contentView === "dashboard") await loadDashboard();
     if (activeView === "cases") await loadCases();
     if (activeView === "links") await loadLinks();
     if (activeView === "visits") await loadVisits();
@@ -210,51 +242,112 @@
     if (activeView === "evidence") await loadEvidence();
     if (activeView === "map") await loadMap();
     if (activeView === "audit") await loadAudit();
+    if (activeView === "analytics") byId("analytics").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function loadDashboard() {
     if (!client) return;
     try {
-      const [cases, links, visits, sessions, evidence, recentCases, recentVisits] = await Promise.all([
-        client.from("cases").select("id", { count: "exact", head: true }),
-        client.from("generated_links").select("id", { count: "exact", head: true }).eq("is_active", true),
+      const since = new Date(Date.now() - 7 * 86400000).toISOString();
+      const [visits, sessions, evidence, locations, recentCases, recentVisits, recentEvidence, latestEvidence] = await Promise.all([
         client.from("visits").select("id", { count: "exact", head: true }),
         client.from("location_sessions").select("id", { count: "exact", head: true }).eq("status", "active"),
         client.from("evidence").select("id", { count: "exact", head: true }),
+        client.from("location_records").select("id", { count: "exact", head: true }),
         client.from("cases").select("id,title,case_reference,status,incident_date,created_at").is("archived_at", null).order("created_at", { ascending: false }).limit(5),
-        client.from("visits").select("id,visited_at,cases(title)").gte("visited_at", new Date(Date.now() - 7 * 86400000).toISOString()).order("visited_at", { ascending: false }).limit(5000)
+        client.from("visits").select("id,visited_at,cases(title)").gte("visited_at", since).order("visited_at", { ascending: false }).limit(5000),
+        client.from("evidence").select("id,evidence_type,collected_at,cases(title)").gte("collected_at", since).order("collected_at", { ascending: false }).limit(5000),
+        client.from("evidence").select("id,evidence_type,mime_type,file_size,integrity_hash,collected_at,storage_path,storage_bucket,cases(title,case_reference)").order("collected_at", { ascending: false }).limit(4)
       ]);
-      for (const result of [cases, links, visits, sessions, evidence, recentCases, recentVisits]) if (result.error) throw result.error;
-      byId("stat-cases").textContent = String(cases.count ?? 0);
-      byId("stat-links").textContent = String(links.count ?? 0);
+      for (const result of [visits, sessions, evidence, locations, recentCases, recentVisits, recentEvidence, latestEvidence]) if (result.error) throw result.error;
       byId("stat-visits").textContent = String(visits.count ?? 0);
       byId("stat-sessions").textContent = String(sessions.count ?? 0);
       byId("stat-evidence").textContent = String(evidence.count ?? 0);
+      byId("stat-locations").textContent = String(locations.count ?? 0);
       byId("recent-cases").innerHTML = recentCases.data.length ? recentCases.data.map((item) => `<tr><td><strong>${escapeHtml(item.title)}</strong></td><td>${escapeHtml(item.case_reference)}</td><td>${statusPill(item.status)}</td><td>${escapeHtml(formatDate(item.incident_date))}</td><td>${escapeHtml(formatDate(item.created_at))}</td></tr>`).join("") : emptyRow(5, "No cases yet.");
-      byId("recent-activity").innerHTML = recentVisits.data.length ? recentVisits.data.slice(0, 5).map((item) => `<div class="activity-item"><span class="activity-dot"><i class="bi bi-activity"></i></span><div><p>Evidence link visited${item.cases?.title ? ` · ${escapeHtml(item.cases.title)}` : ""}</p><small>${escapeHtml(formatDate(item.visited_at))}</small></div></div>`).join("") : '<p class="empty-state">No recorded visits yet.</p>';
-      drawActivityChart(recentVisits.data);
+      const events = [
+        ...recentVisits.data.map((item) => ({ kind: "visit", timestamp: item.visited_at, title: "Evidence link visited", caseTitle: item.cases?.title })),
+        ...recentEvidence.data.map((item) => ({
+          kind: "evidence",
+          timestamp: item.collected_at,
+          title: `${item.evidence_type === "image" ? "Image" : item.evidence_type === "audio" ? "Audio" : item.evidence_type === "written_statement" ? "Written statement" : item.evidence_type} submitted`,
+          caseTitle: item.cases?.title
+        }))
+      ].sort((first, second) => new Date(second.timestamp).getTime() - new Date(first.timestamp).getTime());
+      byId("recent-activity").innerHTML = events.length ? events.slice(0, 7).map((item) => {
+        const icon = item.kind === "visit" ? "bi-activity" : "bi-file-earmark-check";
+        const tag = item.kind === "visit" ? "VISIT" : "EVIDENCE";
+        return `<div class="activity-item"><span class="activity-dot ${item.kind}"><i class="bi ${icon}"></i></span><div class="activity-copy"><p>${escapeHtml(item.title)}</p><small>${escapeHtml(item.caseTitle || "Case unavailable")} · ${escapeHtml(formatDate(item.timestamp))}</small></div><span class="activity-tag">${tag}</span></div>`;
+      }).join("") : '<p class="empty-state">No visit or evidence activity recorded in the last seven days.</p>';
+      drawActivityChart(recentVisits.data, recentEvidence.data);
+      await loadDashboardEvidence(latestEvidence.data);
+      byId("dashboard-updated-at").textContent = `UPDATED ${new Date().toLocaleTimeString()}`;
+      await loadMap("dashboard-location-map");
     } catch (error) {
       toast(`Dashboard could not load: ${error.message}`, "error");
     }
   }
 
-  function drawActivityChart(visits) {
+  async function loadDashboardEvidence(records) {
+    const previews = await Promise.all(records.map(async (record) => {
+      if (!record.storage_path || !record.storage_bucket || !["image", "audio"].includes(record.evidence_type)) {
+        return { record, preview: "" };
+      }
+      const { data, error } = await client.storage.from(record.storage_bucket).createSignedUrl(record.storage_path, 60);
+      if (error) return { record, preview: "", unavailable: true };
+      const source = escapeHtml(data.signedUrl);
+      const preview = record.evidence_type === "image"
+        ? `<img src="${source}" alt="Submitted image evidence" loading="lazy">`
+        : `<audio controls preload="none" aria-label="Submitted audio evidence"><source src="${source}" type="${escapeHtml(record.mime_type || "audio/webm")}"></audio>`;
+      return { record, preview };
+    }));
+    const unavailable = previews.some((item) => item.unavailable);
+    byId("dashboard-evidence").innerHTML = previews.length ? previews.map(({ record, preview, unavailable: previewUnavailable }) => {
+      const type = record.evidence_type === "image" ? "IMAGE" : record.evidence_type === "audio" ? "AUDIO" : "STATEMENT";
+      const metadata = [
+        record.mime_type || type.toLowerCase().replace(/^./, (letter) => letter.toUpperCase()),
+        record.file_size ? `${(record.file_size / 1024).toFixed(1)} KB` : null
+      ].filter(Boolean).join(" · ");
+      const fallback = record.evidence_type === "written_statement" ? "bi-file-earmark-text" : "bi-file-earmark-lock";
+      return `<article class="evidence-card"><div class="evidence-preview ${record.evidence_type}">${preview || `<span class="evidence-placeholder"><i class="bi ${fallback}"></i>${previewUnavailable ? "Preview unavailable" : "No media preview"}</span>`}</div><div class="evidence-card-meta"><span class="evidence-type">${type}</span><strong>${escapeHtml(record.cases?.case_reference || record.cases?.title || "Evidence record")}</strong><small>${escapeHtml(metadata || "Private evidence record")}</small><small>${escapeHtml(formatDate(record.collected_at))}</small>${record.integrity_hash ? `<code title="SHA-256 integrity hash">${escapeHtml(record.integrity_hash.slice(0, 16))}…</code>` : ""}<button class="evidence-preview-button" data-id="${escapeHtml(record.id)}" type="button">Open secure preview <i class="bi bi-arrow-up-right"></i></button></div></article>`;
+    }).join("") : '<p class="empty-state">No evidence has been submitted.</p>';
+    document.querySelectorAll(".evidence-preview-button").forEach((button) => {
+      button.addEventListener("click", () => previewEvidence(button.dataset.id, records));
+    });
+    if (unavailable) toast("One or more private evidence previews could not be loaded. Use Open secure preview to retry.", "error");
+  }
+
+  function drawActivityChart(visits, evidence) {
     if (!window.Chart) return;
-    const labels = Array.from({ length: 7 }, (_, index) => {
+    const days = Array.from({ length: 7 }, (_, index) => {
       const date = new Date();
       date.setDate(date.getDate() - (6 - index));
-      return date.toLocaleDateString(undefined, { weekday: "short" });
+      return { date, key: `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`, label: date.toLocaleDateString(undefined, { weekday: "short" }) };
     });
-    const counts = Array(7).fill(0);
-    for (const visit of visits) {
-      const daysAgo = Math.floor((Date.now() - new Date(visit.visited_at).getTime()) / 86400000);
-      if (daysAgo >= 0 && daysAgo < 7) counts[6 - daysAgo] += 1;
-    }
+    const countsFor = (records, field) => days.map(({ date }) => records.filter((record) => {
+      const timestamp = new Date(record[field]);
+      return timestamp.getFullYear() === date.getFullYear() &&
+        timestamp.getMonth() === date.getMonth() &&
+        timestamp.getDate() === date.getDate();
+    }).length);
     if (chart) chart.destroy();
     chart = new Chart(byId("activity-chart"), {
       type: "bar",
-      data: { labels, datasets: [{ data: counts, backgroundColor: "#4b82eb", borderRadius: 5, maxBarThickness: 30 }] },
-      options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#eef1f5" } } } }
+      data: {
+        labels: days.map((day) => day.label),
+        datasets: [
+          { type: "line", label: "Visits", data: countsFor(visits, "visited_at"), borderColor: "#00ff88", backgroundColor: "rgba(0, 255, 136, .08)", pointBackgroundColor: "#00ff88", pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, tension: .35, fill: true, order: 0 },
+          { type: "bar", label: "Evidence items", data: countsFor(evidence, "collected_at"), backgroundColor: "rgba(57, 255, 20, .28)", borderColor: "rgba(57, 255, 20, .65)", borderWidth: 1, borderRadius: 4, maxBarThickness: 16, order: 1 }
+        ]
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: "#0a110d", titleColor: "#d7fbe5", bodyColor: "#8ca797", borderColor: "#1d3828", borderWidth: 1 } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: "#8ca797" } },
+          y: { beginAtZero: true, ticks: { precision: 0, color: "#8ca797" }, grid: { color: "rgba(85, 119, 101, .2)" } }
+        }
+      }
     });
   }
 
@@ -374,7 +467,7 @@
     else window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
-  async function loadMap() {
+  async function loadMap(targetId = "location-map") {
     try {
       const [gps, visits] = await Promise.all([
         client.from("location_records").select("latitude,longitude,accuracy,recorded_at").limit(1000),
@@ -383,26 +476,31 @@
       if (gps.error) throw gps.error;
       if (visits.error) throw visits.error;
       if (!window.L) throw new Error("The map library did not load.");
-      if (!map) {
-        map = L.map("location-map").setView([20, 0], 2);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+      const isDashboardMap = targetId === "dashboard-location-map";
+      let activeMap = isDashboardMap ? dashboardMap : map;
+      if (!activeMap) {
+        activeMap = L.map(targetId).setView([20, 0], 2);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }).addTo(activeMap);
+        if (isDashboardMap) dashboardMap = activeMap;
+        else map = activeMap;
       }
-      map.eachLayer((layer) => { if (layer instanceof L.CircleMarker) map.removeLayer(layer); });
+      activeMap.eachLayer((layer) => { if (layer instanceof L.CircleMarker) activeMap.removeLayer(layer); });
       const points = [];
       for (const row of gps.data) {
         const lat = Number(row.latitude); const lng = Number(row.longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
         points.push([lat, lng]);
-        L.circleMarker([lat, lng], { radius: 7, color: "#2366df", fillColor: "#2366df", fillOpacity: .8 }).addTo(map).bindPopup(`<strong>Consented GPS</strong><br>${escapeHtml(formatDate(row.recorded_at))}<br>Accuracy: ${escapeHtml(row.accuracy)} m`);
+        L.circleMarker([lat, lng], { radius: 7, color: "#00ff88", fillColor: "#00ff88", fillOpacity: .8 }).addTo(activeMap).bindPopup(`<strong>Consented GPS</strong><br>${escapeHtml(formatDate(row.recorded_at))}<br>Accuracy: ${escapeHtml(row.accuracy)} m`);
       }
       for (const row of visits.data) {
         const lat = Number(row.estimated_latitude); const lng = Number(row.estimated_longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
         points.push([lat, lng]);
-        L.circleMarker([lat, lng], { radius: 7, color: "#d88813", fillColor: "#edae47", fillOpacity: .8 }).addTo(map).bindPopup(`<strong>Estimated IP location</strong><br>${escapeHtml([row.estimated_city, row.estimated_region, row.estimated_country].filter(Boolean).join(", ") || "Approximate location")}<br>${escapeHtml(formatDate(row.visited_at))}<br><small>Estimate only</small>`);
+        L.circleMarker([lat, lng], { radius: 7, color: "#e5bd64", fillColor: "#e5bd64", fillOpacity: .8 }).addTo(activeMap).bindPopup(`<strong>Estimated IP location</strong><br>${escapeHtml([row.estimated_city, row.estimated_region, row.estimated_country].filter(Boolean).join(", ") || "Approximate location")}<br>${escapeHtml(formatDate(row.visited_at))}<br><small>Estimate only</small>`);
       }
-      if (points.length) map.fitBounds(points, { padding: [28, 28], maxZoom: 11 });
-      window.setTimeout(() => map.invalidateSize(), 100);
+      if (isDashboardMap) byId("dashboard-map-empty").classList.toggle("d-none", points.length > 0);
+      if (points.length) activeMap.fitBounds(points, { padding: [28, 28], maxZoom: 11 });
+      window.setTimeout(() => activeMap.invalidateSize(), 100);
     } catch (error) { toast(`Location map could not load: ${error.message}`, "error"); }
   }
 
@@ -691,7 +789,7 @@
           accuracy: positionUpdate.coords.accuracy
         });
         if (!locationTrackingActive || locationStopInProgress || activeLocationSession !== sessionId) return;
-        status.firstChild.textContent = `Location sharing is active. Last update ${new Date(positionUpdate.timestamp).toLocaleTimeString()} (±${Math.round(positionUpdate.coords.accuracy)} m). `;
+        updateStatusText(status, `Location sharing is active. Last update ${new Date(positionUpdate.timestamp).toLocaleTimeString()} (±${Math.round(positionUpdate.coords.accuracy)} m). `);
       } catch (error) {
         if (/inactive|expired/i.test(error.message)) {
           await stopLocation("The evidence link is no longer active. Location sharing has stopped.");
@@ -753,9 +851,8 @@
       const sessionId = activeLocationSession;
       if (!visitId) {
         console.error(JSON.stringify({ operation: "end-location-session", success: false, code: "MISSING_VISIT_ID" }));
-        if (status?.firstChild) {
-          status.firstChild.textContent = "Browser tracking stopped, but the session cannot be finalized without its visit record. ";
-        }
+        activeLocationSession = undefined;
+        if (status) updateStatusText(status, "Browser tracking stopped, but the session cannot be finalized without its visit record. ");
         if (stopButton) {
           stopButton.disabled = false;
           stopButton.textContent = "Retry stop";
@@ -768,9 +865,7 @@
         await invoke("end-location-session", { visit_id: visitId, session_id: sessionId });
       } catch (error) {
         console.error(JSON.stringify({ operation: "end-location-session", success: false, message: error.message }));
-        if (status?.firstChild) {
-          status.firstChild.textContent = `Browser tracking stopped, but the session could not be finalized: ${error.message} `;
-        }
+        if (status) updateStatusText(status, `Browser tracking stopped, but the session could not be finalized: ${error.message} `);
         if (stopButton) {
           stopButton.disabled = false;
           stopButton.textContent = "Retry stop";
@@ -1021,6 +1116,17 @@
       catch (error) { toast(`Could not copy the link: ${error.message}`, "error"); }
     });
     byId("menu-toggle").addEventListener("click", () => byId("sidebar").classList.toggle("open"));
+    byId("menu-close").addEventListener("click", () => byId("sidebar").classList.remove("open"));
+    byId("refresh-dashboard").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.classList.add("is-refreshing");
+      try { await loadDashboard(); }
+      finally {
+        button.disabled = false;
+        button.classList.remove("is-refreshing");
+      }
+    });
     byId("export-button").addEventListener("click", async () => {
       try {
         const { data, error } = await client.from("cases").select("id,case_reference,title").order("created_at", { ascending: false });
@@ -1043,6 +1149,8 @@
   }
 
   setupEvents();
+  updateSystemClock();
+  window.setInterval(updateSystemClock, 1000);
   start().catch((error) => {
     setScreen("login-screen");
     toast(`Application initialization failed: ${error.message}`, "error");
