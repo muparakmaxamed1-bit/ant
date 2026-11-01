@@ -1,7 +1,12 @@
 import { createClient, type SupabaseClient, type User } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 export class HttpError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code?: string,
+    public readonly requestId?: string
+  ) {
     super(message);
     this.name = "HttpError";
   }
@@ -67,10 +72,19 @@ export function serve(
       const known = error instanceof HttpError;
       const status = known ? error.status : 500;
       const message = known ? error.message : "The request could not be completed.";
-      console.error(JSON.stringify({ functionError: message, status }));
+      console.error(JSON.stringify({
+        functionError: message,
+        status,
+        ...(known && error.code ? { code: error.code } : {}),
+        ...(known && error.requestId ? { request_id: error.requestId } : {})
+      }));
       headers.set("Content-Type", "application/json");
       headers.set("Cache-Control", "no-store");
-      return new Response(JSON.stringify({ error: message }), { status, headers });
+      return new Response(JSON.stringify({
+        error: message,
+        ...(known && error.code ? { code: error.code } : {}),
+        ...(known && error.requestId ? { request_id: error.requestId } : {})
+      }), { status, headers });
     });
 }
 
@@ -234,32 +248,54 @@ export function parseUserAgent(userAgent: string) {
     ua.includes("linux") ? "Linux" : "Unknown";
   const deviceCategory = /ipad|tablet/.test(ua) ? "Tablet" :
     /mobile|iphone|android/.test(ua) ? "Mobile" : "Desktop";
-  return { browser, operatingSystem, deviceCategory };
+  return { browser, operating_system: operatingSystem, device_category: deviceCategory };
 }
 
 export async function lookupIp(ip: string | null) {
   const endpoint = Deno.env.get("IP_GEOLOCATION_URL");
   const apiKey = Deno.env.get("IP_GEOLOCATION_API_KEY");
   if (!endpoint || !apiKey || !ip) return {};
-  const url = new URL(endpoint);
-  url.searchParams.set("ip", ip);
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-    signal: AbortSignal.timeout(5000)
-  });
-  if (!response.ok) throw new HttpError(502, "IP location lookup failed.");
-  const result: unknown = await response.json();
-  if (!result || typeof result !== "object") throw new HttpError(502, "IP location provider returned invalid data.");
-  const value = result as Record<string, unknown>;
-  const latitude = Number(value.latitude);
-  const longitude = Number(value.longitude);
-  return {
-    estimated_country: typeof value.country === "string" ? value.country.slice(0, 100) : null,
-    estimated_region: typeof value.region === "string" ? value.region.slice(0, 100) : null,
-    estimated_city: typeof value.city === "string" ? value.city.slice(0, 100) : null,
-    estimated_latitude: Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 ? latitude : null,
-    estimated_longitude: Number.isFinite(longitude) && longitude >= -180 && longitude <= 180 ? longitude : null
-  };
+
+  try {
+    const url = new URL(endpoint);
+    url.searchParams.set("ip", ip);
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json"
+      },
+      signal: AbortSignal.timeout(5000)
+    });
+
+    if (!response.ok) {
+      console.warn(JSON.stringify({ operation: "ip_lookup", status: response.status, message: "IP geolocation provider returned a non-OK response." }));
+      return {};
+    }
+
+    const result: unknown = await response.json();
+    if (!result || typeof result !== "object") {
+      console.warn(JSON.stringify({ operation: "ip_lookup", status: 502, message: "IP geolocation provider returned invalid JSON." }));
+      return {};
+    }
+
+    const value = result as Record<string, unknown>;
+    const latitude = Number(value.latitude);
+    const longitude = Number(value.longitude);
+    return {
+      estimated_country: typeof value.country === "string" ? value.country.slice(0, 100) : null,
+      estimated_region: typeof value.region === "string" ? value.region.slice(0, 100) : null,
+      estimated_city: typeof value.city === "string" ? value.city.slice(0, 100) : null,
+      estimated_latitude: Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 ? latitude : null,
+      estimated_longitude: Number.isFinite(longitude) && longitude >= -180 && longitude <= 180 ? longitude : null
+    };
+  } catch {
+    console.warn(JSON.stringify({
+      operation: "ip_lookup",
+      success: false,
+      message: "Optional network-location lookup failed."
+    }));
+    return {};
+  }
 }
 
 export async function getServiceClient(): Promise<SupabaseClient> {

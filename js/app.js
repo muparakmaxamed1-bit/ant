@@ -77,7 +77,11 @@
       let detail = error.message || "The secure backend request failed.";
       if (error.context?.json) {
         const response = await error.context.json().catch(() => null);
-        if (response?.error) detail = response.error;
+        if (response?.error) {
+          detail = response.request_id
+            ? `${response.error} (Reference: ${response.request_id})`
+            : response.error;
+        }
       }
 
       throw new Error(detail);
@@ -884,10 +888,10 @@
         method: "POST",
         headers: {
           apikey: config.supabaseAnonKey,
-          Authorization: `Bearer ${config.supabaseAnonKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ token: publicToken, visit_id: currentVisitId, session_id: activeLocationSession }),
+        credentials: "omit",
         keepalive: true
       }).catch((error) => console.error("Could not request location-session closure on page exit.", error));
     }
